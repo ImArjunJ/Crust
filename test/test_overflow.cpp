@@ -9,7 +9,6 @@ int main()
 
     // Intentionally overflow the allocated memory to trigger redzone corruption.
     strcpy(buffer, "This string is way too long for the allocated buffer!");
-
     std::cout << buffer << std::endl;
     free(buffer);
     return 0;

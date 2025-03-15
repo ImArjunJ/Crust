@@ -16,7 +16,6 @@ namespace crust
 
     static quarantine_node* quarantine_head = nullptr;
 
-    // Helper function to call the real free() function.
     static void call_real_free(void* ptr)
     {
         using free_t = void (*)(void*);

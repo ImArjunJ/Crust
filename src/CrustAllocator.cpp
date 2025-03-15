@@ -1,5 +1,6 @@
 #include "CrustAllocator.hpp"
 
+#include <cxxabi.h>
 #include <dlfcn.h>
 #include <execinfo.h>
 #include <unistd.h>
@@ -8,6 +9,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <sstream>
 
 #include "CrustCommon.hpp"
 #include "CrustInternal.hpp"
@@ -19,6 +21,44 @@ static thread_local int in_secure_alloc = 0;
 
 namespace crust
 {
+    static std::string demangle_symbol(const char* mangled_name)
+    {
+        int status = 0;
+        char* demangled = abi::__cxa_demangle(mangled_name, nullptr, nullptr, &status);
+        std::string result = (status == 0 && demangled) ? demangled : mangled_name;
+        free(demangled);
+        return result;
+    }
+
+    static void print_stack_trace()
+    {
+#ifdef CRUST_DEBUG
+        constexpr int max_frames = 32;
+        void* frames[max_frames];
+        int count = backtrace(frames, max_frames);
+
+        // Build the stack trace string.
+        std::ostringstream oss;
+        oss << "Stack trace (" << count << " frames):\n";
+
+        for (int i = 0; i < count; ++i)
+        {
+            Dl_info info;
+            if (dladdr(frames[i], &info) && info.dli_sname)
+            {
+                std::string demangled = demangle_symbol(info.dli_sname);
+                ptrdiff_t offset = static_cast<char*>(frames[i]) - static_cast<char*>(info.dli_saddr);
+                oss << "  " << i << ": " << info.dli_fname << " : " << demangled << " + " << offset << "\n";
+            }
+            else
+            {
+                oss << "  " << i << ": " << frames[i] << "\n";
+            }
+        }
+        std::string trace_str = oss.str();
+        write(STDERR_FILENO, trace_str.c_str(), trace_str.size());
+#endif
+    }
 
     using malloc_t = void* (*) (size_t);
     using free_t = void (*)(void*);
@@ -99,7 +139,6 @@ namespace crust
         in_secure_alloc = 1;
 
         check_shadow_record(ptr);
-
         uint8_t* user_ptr = reinterpret_cast<uint8_t*>(ptr);
         auto header = reinterpret_cast<header_t*>(user_ptr - REDZONE_SIZE - sizeof(header_t));
 
@@ -108,10 +147,12 @@ namespace crust
             log_message("ERROR", "Header corruption detected at {}", static_cast<const void*>(ptr));
             mark_shadow_record_freed(ptr);
             in_secure_alloc = 0;
-            return;
+            abort(); // Abort on header corruption.
         }
+
         size_t size = header->size;
         int pool_type = header->pool_type;
+        bool redzone_error = false;
 
         uint8_t* redzone_front = reinterpret_cast<uint8_t*>(header) + sizeof(header_t);
         for (unsigned int i = 0; i < REDZONE_SIZE; i++)
@@ -119,6 +160,7 @@ namespace crust
             if (redzone_front[i] != REDZONE_PATTERN)
             {
                 log_message("ERROR", "Redzone front corrupted at {} (offset {})", static_cast<const void*>(redzone_front + i), i);
+                redzone_error = true;
                 break;
             }
         }
@@ -128,20 +170,25 @@ namespace crust
             if (redzone_back[i] != REDZONE_PATTERN)
             {
                 log_message("ERROR", "Redzone back corrupted at {} (offset {})", static_cast<const void*>(redzone_back + i), i);
+                redzone_error = true;
                 break;
             }
         }
+        if (redzone_error)
+        {
+            log_message("ERROR", "Corruption detected; aborting free for {}", static_cast<const void*>(ptr));
+            mark_shadow_record_freed(ptr);
+            in_secure_alloc = 0;
+            abort(); // Abort on redzone corruption.
+        }
 
-        // Poison the user region with 0xDE to help detect UAF errors.
+        // Poison the user region to help detect use-after-free.
         std::memset(user_ptr, 0xDE, size);
 
-        // Mark the allocation as freed so it is not reported as a leak.
         mark_shadow_record_freed(ptr);
-
         size_t total_size = sizeof(header_t) + REDZONE_SIZE + size + REDZONE_SIZE;
         add_to_quarantine(reinterpret_cast<void*>(header), total_size);
         flush_quarantine();
-
         log_message("INFO", "Freed {} bytes from {} (pool: {})", size, static_cast<const void*>(ptr), (pool_type == 0 ? "small" : "large"));
         in_secure_alloc = 0;
     }

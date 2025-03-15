@@ -1,5 +1,5 @@
 #pragma once
-#define CRUST_DEBUG
+// #define CRUST_DEBUG
 
 #include <unistd.h>
 
