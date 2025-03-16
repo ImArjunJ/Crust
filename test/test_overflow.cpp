@@ -1,6 +1,8 @@
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <thread>
 
 int main()
 {
@@ -11,5 +13,6 @@ int main()
     strcpy(buffer, "This string is way too long for the allocated buffer!");
     std::cout << buffer << std::endl;
     free(buffer);
+    std::this_thread::sleep_for(std::chrono::seconds(3));
     return 0;
 }

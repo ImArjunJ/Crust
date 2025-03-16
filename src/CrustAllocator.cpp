@@ -5,22 +5,34 @@
 #include <execinfo.h>
 #include <unistd.h>
 
+#include <atomic>
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <iostream>
+#include <mutex>
 #include <sstream>
+#include <thread>
+#include <vector>
 
-#include "CrustCommon.hpp"
 #include "CrustInternal.hpp"
 #include "CrustLogger.hpp"
 #include "CrustQuarantine.hpp"
 #include "CrustShadow.hpp"
 
-static thread_local int in_secure_alloc = 0;
+static bool graceful_mode = []
+{
+    const char* mode = std::getenv("CRUST_GRACEFUL_MODE");
+    return mode && std::strcmp(mode, "1") == 0;
+}();
+
+static thread_local bool in_secure_alloc = false;
 
 namespace crust
 {
+    // demangle C++ symbol names.
     static std::string demangle_symbol(const char* mangled_name)
     {
         int status = 0;
@@ -30,39 +42,63 @@ namespace crust
         return result;
     }
 
+    // Utility: Print a stack trace when CRUST_DEBUG=1.
     static void print_stack_trace()
     {
-#ifdef CRUST_DEBUG
-        constexpr int max_frames = 32;
-        void* frames[max_frames];
-        int count = backtrace(frames, max_frames);
-
-        // Build the stack trace string.
-        std::ostringstream oss;
-        oss << "Stack trace (" << count << " frames):\n";
-
-        for (int i = 0; i < count; ++i)
+        const char* CRUST_DEBUG = std::getenv("CRUST_DEBUG");
+        if (CRUST_DEBUG && std::strcmp(CRUST_DEBUG, "1") == 0)
         {
-            Dl_info info;
-            if (dladdr(frames[i], &info) && info.dli_sname)
+            constexpr int max_frames = 32;
+            void* frames[max_frames];
+            int count = backtrace(frames, max_frames);
+            std::ostringstream oss;
+            oss << "Stack trace (" << count << " frames):\n";
+            for (int i = 0; i < count; ++i)
             {
-                std::string demangled = demangle_symbol(info.dli_sname);
-                ptrdiff_t offset = static_cast<char*>(frames[i]) - static_cast<char*>(info.dli_saddr);
-                oss << "  " << i << ": " << info.dli_fname << " : " << demangled << " + " << offset << "\n";
+                Dl_info info;
+                if (dladdr(frames[i], &info) && info.dli_sname)
+                {
+                    std::string demangled = demangle_symbol(info.dli_sname);
+                    ptrdiff_t offset = static_cast<char*>(frames[i]) - static_cast<char*>(info.dli_saddr);
+                    oss << "  " << i << ": " << info.dli_fname << " : " << demangled << " + " << offset << "\n";
+                }
+                else
+                {
+                    oss << "  " << i << ": " << frames[i] << "\n";
+                }
             }
-            else
+            std::string trace_str = oss.str();
+            write(STDERR_FILENO, trace_str.c_str(), trace_str.size());
+        }
+    }
+
+    // Centralized error handler: Logs error details, prints the stack trace and aborts.
+    static void handle_critical_error(const std::string& error_msg, void* ptr = nullptr, shadow_record* rec = nullptr)
+    {
+        log_message("ERROR", "Critical error: {}", error_msg);
+        if (ptr)
+        {
+            log_message("ERROR", "Affected pointer: {}", ptr);
+        }
+        if (rec)
+        {
+            log_message("ERROR", "Allocation backtrace:");
+            for (int i = 0; i < rec->bt_size; ++i)
             {
-                oss << "  " << i << ": " << frames[i] << "\n";
+                log_message("ERROR", "  Frame {}: {}", i, rec->backtrace[i]);
             }
         }
-        std::string trace_str = oss.str();
-        write(STDERR_FILENO, trace_str.c_str(), trace_str.size());
-#endif
+        print_stack_trace();
+        if (graceful_mode)
+        {
+            log_message("ERROR", "Graceful mode enabled: dumping additional allocation context before aborting.");
+            // ideally dump
+        }
+        abort();
     }
 
     using malloc_t = void* (*) (size_t);
     using free_t = void (*)(void*);
-
     static malloc_t get_real_malloc()
     {
         static malloc_t ptr = nullptr;
@@ -77,7 +113,6 @@ namespace crust
         }
         return ptr;
     }
-
     static free_t get_real_free()
     {
         static free_t ptr = nullptr;
@@ -93,11 +128,12 @@ namespace crust
         return ptr;
     }
 
+    // secure_malloc: Allocates memory with a header and redzones, and adds a shadow record.
     void* secure_malloc(std::size_t size)
     {
         if (in_secure_alloc)
             return get_real_malloc()(size);
-        in_secure_alloc = 1;
+        in_secure_alloc = true;
 
         void* bt[16];
         int bt_size = backtrace(bt, 16);
@@ -106,7 +142,7 @@ namespace crust
         auto raw_ptr = reinterpret_cast<uint8_t*>(get_real_malloc()(total_size));
         if (!raw_ptr)
         {
-            in_secure_alloc = 0;
+            in_secure_alloc = false;
             return nullptr;
         }
         auto header = reinterpret_cast<header_t*>(raw_ptr);
@@ -123,7 +159,7 @@ namespace crust
 
         log_message("INFO", "Allocated {} bytes at {} (pool: {})", size, static_cast<const void*>(user_ptr), (pool_type == 0 ? "small" : "large"));
         add_shadow_record(user_ptr, size, pool_type, bt, bt_size);
-        in_secure_alloc = 0;
+        in_secure_alloc = false;
         return user_ptr;
     }
 
@@ -136,24 +172,18 @@ namespace crust
             get_real_free()(ptr);
             return;
         }
-        in_secure_alloc = 1;
+        in_secure_alloc = true;
 
-        check_shadow_record(ptr);
         uint8_t* user_ptr = reinterpret_cast<uint8_t*>(ptr);
         auto header = reinterpret_cast<header_t*>(user_ptr - REDZONE_SIZE - sizeof(header_t));
 
         if (header->canary != CANARY_VALUE)
         {
-            log_message("ERROR", "Header corruption detected at {}", static_cast<const void*>(ptr));
-            mark_shadow_record_freed(ptr);
-            in_secure_alloc = 0;
-            abort(); // Abort on header corruption.
+            handle_critical_error("Header corruption detected", ptr);
         }
 
-        size_t size = header->size;
-        int pool_type = header->pool_type;
+        // check the redzones for overflow.
         bool redzone_error = false;
-
         uint8_t* redzone_front = reinterpret_cast<uint8_t*>(header) + sizeof(header_t);
         for (unsigned int i = 0; i < REDZONE_SIZE; i++)
         {
@@ -164,7 +194,7 @@ namespace crust
                 break;
             }
         }
-        uint8_t* redzone_back = user_ptr + size;
+        uint8_t* redzone_back = user_ptr + header->size;
         for (unsigned int i = 0; i < REDZONE_SIZE; i++)
         {
             if (redzone_back[i] != REDZONE_PATTERN)
@@ -176,30 +206,89 @@ namespace crust
         }
         if (redzone_error)
         {
-            log_message("ERROR", "Corruption detected; aborting free for {}", static_cast<const void*>(ptr));
-            mark_shadow_record_freed(ptr);
-            in_secure_alloc = 0;
-            abort(); // Abort on redzone corruption.
+            handle_critical_error("Buffer overflow detected (redzone corruption)", ptr);
         }
 
-        // Poison the user region to help detect use-after-free.
-        std::memset(user_ptr, 0xDE, size);
+        auto rec = find_shadow_record(ptr);
+        if (!rec)
+        {
+            handle_critical_error("Invalid free: pointer was not allocated by Crust", ptr);
+        }
+        if (rec->is_freed.load())
+        {
+            handle_critical_error("Double free detected", ptr, rec);
+        }
+
+        check_shadow_record(ptr);
+
+        std::memset(user_ptr, 0xDE, header->size);
 
         mark_shadow_record_freed(ptr);
-        size_t total_size = sizeof(header_t) + REDZONE_SIZE + size + REDZONE_SIZE;
+        size_t total_size = sizeof(header_t) + REDZONE_SIZE + header->size + REDZONE_SIZE;
         add_to_quarantine(reinterpret_cast<void*>(header), total_size);
         flush_quarantine();
-        log_message("INFO", "Freed {} bytes from {} (pool: {})", size, static_cast<const void*>(ptr), (pool_type == 0 ? "small" : "large"));
-        in_secure_alloc = 0;
+        log_message("INFO", "Freed {} bytes from {} (pool: {})", header->size, static_cast<const void*>(ptr), (header->pool_type == 0 ? "small" : "large"));
+        in_secure_alloc = false;
+    }
+
+    // Iterates over all active allocations and verifies header and redzone integrity.
+    void validate_all_allocations()
+    {
+        shadow_record* rec = get_shadow_head_ptr();
+        while (rec)
+        {
+            if (!rec->is_freed.load())
+            {
+                uint8_t* user_ptr = reinterpret_cast<uint8_t*>(rec->user_ptr);
+                header_t* header = reinterpret_cast<header_t*>(user_ptr - REDZONE_SIZE - sizeof(header_t));
+                if (header->canary != CANARY_VALUE)
+                {
+                    log_message("ERROR", "Global validation: header corruption detected for pointer {}", rec->user_ptr);
+                }
+                uint8_t* redzone_front = reinterpret_cast<uint8_t*>(header) + sizeof(header_t);
+                for (unsigned int i = 0; i < REDZONE_SIZE; i++)
+                {
+                    if (redzone_front[i] != REDZONE_PATTERN)
+                    {
+                        log_message("ERROR", "Global validation: redzone front corruption at pointer {} (offset {})", rec->user_ptr, i);
+                        break;
+                    }
+                }
+                uint8_t* redzone_back = user_ptr + header->size;
+                for (unsigned int i = 0; i < REDZONE_SIZE; i++)
+                {
+                    if (redzone_back[i] != REDZONE_PATTERN)
+                    {
+                        log_message("ERROR", "Global validation: redzone back corruption at pointer {} (offset {})", rec->user_ptr, i);
+                        break;
+                    }
+                }
+            }
+            rec = rec->next;
+        }
+        log_message("INFO", "Global allocation validation completed");
+    }
+
+    static void signal_handler(int signum)
+    {
+        log_message("INFO", "Received signal {}: Starting global allocation validation", signum);
+        validate_all_allocations();
+    }
+
+    __attribute__((constructor)) static void init_crust_signal_handler()
+    {
+        std::signal(SIGUSR1, signal_handler);
+        log_message("INFO", "Crust signal handler for SIGUSR1 registered");
     }
 
     void dump_leaks()
     {
-        auto rec = get_shadow_head_ptr(); // Already locks shadow_mutex internally.
+        flush_quarantine();
+        shadow_record* rec = get_shadow_head_ptr();
         int leak_count = 0;
         while (rec)
         {
-            if (rec->is_freed == 0)
+            if (!rec->is_freed.load())
             {
                 log_message("WARN", "Memory leak detected: pointer={}, size={}", rec->user_ptr, rec->size);
                 leak_count++;
@@ -220,7 +309,6 @@ namespace crust
         }
     };
     static LeakReporter leakReporter;
-
 } // namespace crust
 
 void* operator new(std::size_t size) noexcept(false)
@@ -230,6 +318,14 @@ void* operator new(std::size_t size) noexcept(false)
     throw std::bad_alloc();
 }
 void operator delete(void* ptr) noexcept
+{
+    crust::secure_free(ptr);
+}
+void operator delete(void* ptr, std::size_t) noexcept
+{
+    crust::secure_free(ptr);
+}
+void operator delete[](void* ptr, std::size_t) noexcept
 {
     crust::secure_free(ptr);
 }

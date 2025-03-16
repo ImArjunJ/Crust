@@ -1,6 +1,9 @@
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <thread>
+
 
 int main()
 {
@@ -23,6 +26,8 @@ int main()
     strcpy(buffer, "Hello from Crust malloc");
     std::cout << buffer << std::endl;
     free(buffer);
+
+    std::this_thread::sleep_for(std::chrono::seconds(2));
 
     return 0;
 }

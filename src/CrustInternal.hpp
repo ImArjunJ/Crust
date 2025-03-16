@@ -1,7 +1,5 @@
-#ifndef CRUST_INTERNAL_HPP
-#define CRUST_INTERNAL_HPP
-
-#include "CrustCommon.hpp"
+#pragma once
+#include <cstdint>
 
 namespace crust
 {
@@ -12,8 +10,7 @@ namespace crust
         uint32_t canary; // Canary value.
         size_t size;     // Requested allocation size.
         int pool_type;   // 0 = small, 1 = large.
+        uint8_t tag;     // Random tag for pointer provenance.
     };
 
 } // namespace crust
-
-#endif // CRUST_INTERNAL_HPP

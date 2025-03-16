@@ -1,5 +1,4 @@
 #pragma once
-// #define CRUST_DEBUG
 
 #include <unistd.h>
 
@@ -34,12 +33,17 @@ namespace crust
         if (log_str.back() != '\n')
             log_str.push_back('\n');
 
-#ifdef CRUST_DEBUG
-        write(STDERR_FILENO, log_str.c_str(), log_str.size());
-#else
-        if (std::strcmp(level, "ERROR") == 0 || std::strcmp(level, "WARN") == 0)
+        const char* CRUST_DEBUG = std::getenv("CRUST_DEBUG");
+
+        if (CRUST_DEBUG && std::strcmp(CRUST_DEBUG, "1") == 0)
+        {
             write(STDERR_FILENO, log_str.c_str(), log_str.size());
-#endif
+        }
+        else
+        {
+            if (std::strcmp(level, "ERROR") == 0 || std::strcmp(level, "WARN") == 0)
+                write(STDERR_FILENO, log_str.c_str(), log_str.size());
+        }
     }
 
 } // namespace crust
