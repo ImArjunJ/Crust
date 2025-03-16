@@ -28,7 +28,6 @@ static thread_local bool in_secure_alloc = false;
 
 namespace crust
 {
-    // demangle C++ symbol names.
     static std::string demangle_symbol(const char* mangled_name)
     {
         int status = 0;
