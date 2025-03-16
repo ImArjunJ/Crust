@@ -5,6 +5,7 @@
 #include <execinfo.h>
 #include <unistd.h>
 
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -16,6 +17,7 @@
 #include "CrustLogger.hpp"
 #include "CrustQuarantine.hpp"
 #include "CrustShadow.hpp"
+
 
 static bool graceful_mode = []
 {
