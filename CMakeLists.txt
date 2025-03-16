@@ -31,6 +31,12 @@ add_executable(test_stress test/test_stress.cpp)
 add_executable(test_uaf test/test_uaf.cpp)
 #target_link_libraries(test_uaf PRIVATE crust)
 
+add_executable(test_double_free test/test_double_free.cpp)
+#target_link_libraries(test_double_free PRIVATE crust)
+
+add_executable(test_invalid_free test/test_invalid_free.cpp)
+#target_link_libraries(test_invalid_free PRIVATE crust)
+
 if (MSVC)
     target_compile_options(crust PRIVATE /W4)
 else()

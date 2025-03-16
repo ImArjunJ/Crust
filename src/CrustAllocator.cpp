@@ -5,17 +5,12 @@
 #include <execinfo.h>
 #include <unistd.h>
 
-#include <atomic>
-#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <iostream>
-#include <mutex>
 #include <sstream>
-#include <thread>
-#include <vector>
 
 #include "CrustInternal.hpp"
 #include "CrustLogger.hpp"
