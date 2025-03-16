@@ -24,14 +24,12 @@ Crust is a memory safety tool for C/C++ projects that intercepts dynamic (heap) 
 
 ## Build Instructions
 
-1. **Clone the Repository:**
-
 ```bash
 git clone https://github.com/ImArjunJ/crust.git
 cd crust
 ```
 
-2. **Configure and Build**
+---
 
 ```bash
 mkdir build && cd build
@@ -41,7 +39,7 @@ cmake --build .
 
 This will generate the shared object library (libcrust.so) that you can use via LD_PRELOAD.
 
-## Usage & Tutorial
+## Usage
 
 1. **Setting Up:**  
    Export any required environment variables before running your application:
