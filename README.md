@@ -2,6 +2,8 @@
 
 Crust is a memory safety tool for C/C++ projects that intercepts dynamic (heap) memory allocations and provides error detection and reporting with memory dumps. It is designed to help developers catch common memory errors—such as buffer overflows, use-after-free, double free, and memory leaks—early in the development process. This project was developed for SotonHack, for the "Shapes a Secure Tomorrow" track. Since reportedly 70% of severe security vulnerabilities are memory safety related (Google and MSFT).
 
+![Crust Logo](img/crust.png)
+
 ## Features
 
 - **Redzone & Header Protection:**  
