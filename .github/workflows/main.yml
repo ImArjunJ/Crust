@@ -31,4 +31,4 @@ jobs:
           # Set environment variables for debugging and graceful mode
           export CRUST_DEBUG=1
           export CRUST_GRACEFUL_MODE=1
-          LD_PRELOAD=$(pwd)/libcrust.so ./test_program
+          LD_PRELOAD=$(pwd)/libcrust.so ./build/test_program
