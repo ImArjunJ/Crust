@@ -115,7 +115,7 @@ namespace crust
                 log_message("ERROR", "{}", backStr);
 
                 std::ostringstream user_dump;
-                user_dump << "User memory dump (first 64 bytes): ";
+                user_dump << "User memory dump: ";
                 unsigned int dump_len = (hdr->size < 64 ? hdr->size : 64);
                 for (unsigned int i = 0; i < dump_len; i++)
                 {
