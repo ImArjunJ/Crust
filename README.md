@@ -20,11 +20,11 @@ Crust is a memory safety tool for C/C++ projects that intercepts dynamic (heap) 
 
 - ### **Global Validation & Signal Handling:**
 
-  Crust++ registers a signal handler (for SIGUSR1) that triggers a global validation routine to scan active allocations and verify the integrity of headers and redzones in real time.
+  Crust registers a signal handler (for SIGUSR1) that triggers a global validation routine to scan active allocations and verify the integrity of headers and redzones in real time.
 
 - ### **Robust Error Handling & Diagnostic Logging:**
 
-  When a critical error is detected (such as a redzone corruption, header overwrite, or double free), Crust++ logs detailed error messages along with stack traces and allocation backtraces. An optional “graceful mode” can be enabled to dump additional allocation context before aborting.
+  When a critical error is detected (such as a redzone corruption, header overwrite, or double free), Crust logs detailed error messages along with stack traces and allocation backtraces. An optional “graceful mode” can be enabled to dump additional allocation context before aborting.
 
 - ### **Interception of Global Memory Functions:**
   Crust overrides global C/C++ allocation functions (`malloc`, `free`, `new`, `delete`, etc.) to ensure full coverage.
@@ -64,7 +64,7 @@ LD_PRELOAD=./build/libcrust.so ./your_application
 
 ## Testing
 
-A variety of test programs are provided in the `tests/` directory to ensure Crust++ can detect different types of memory errors and scenarios:
+A variety of test programs are provided in the `tests/` directory to ensure Crust can detect different types of memory errors and scenarios:
 
 - **test_overflow.cpp**  
   Intentionally writes past the end of a buffer to trigger redzone corruption.
