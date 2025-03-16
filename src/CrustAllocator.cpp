@@ -18,7 +18,6 @@
 #include "CrustQuarantine.hpp"
 #include "CrustShadow.hpp"
 
-
 static bool graceful_mode = []
 {
     const char* mode = std::getenv("CRUST_GRACEFUL_MODE");
