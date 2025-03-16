@@ -6,22 +6,27 @@ Crust is a memory safety tool for C/C++ projects that intercepts dynamic (heap) 
 
 ## Features
 
-- **Redzone & Header Protection:**  
+- ### **Redzone & Header Protection:**
+
   Each allocation is wrapped with a header (containing a magic canary, allocation size, and pool type) and redzones before and after the user-accessible memory. These protect against buffer overflows and underflows.
 
-- **Shadow Memory Tracking:**  
+- ### **Shadow Memory Tracking:**
+
   A corresponding shadow record is maintained for every allocation. The shadow record includes metadata such as the pointer address, size, allocation backtrace, and status (freed or not), enabling double-free and invalid free detection.
 
-- **Quarantine Mechanism:**  
+- ### **Quarantine Mechanism:**
+
   Freed memory is not immediately returned to the system. Instead, it is placed into a quarantine zone with a configurable delay to catch use-after-free errors by poisoning the freed memory.
 
-- **Global Validation & Signal Handling:**  
+- ### **Global Validation & Signal Handling:**
+
   Crust++ registers a signal handler (for SIGUSR1) that triggers a global validation routine to scan active allocations and verify the integrity of headers and redzones in real time.
 
-- **Robust Error Handling & Diagnostic Logging:**  
+- ### **Robust Error Handling & Diagnostic Logging:**
+
   When a critical error is detected (such as a redzone corruption, header overwrite, or double free), Crust++ logs detailed error messages along with stack traces and allocation backtraces. An optional “graceful mode” can be enabled to dump additional allocation context before aborting.
 
-- **Interception of Global Memory Functions:**  
+- ### **Interception of Global Memory Functions:**
   Crust++ overrides global C/C++ allocation functions (`malloc`, `free`, `new`, `delete`, etc.) to ensure comprehensive coverage.
 
 ## Build Instructions
