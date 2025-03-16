@@ -283,7 +283,6 @@ namespace crust
 
     void dump_leaks()
     {
-        flush_quarantine();
         shadow_record* rec = get_shadow_head_ptr();
         int leak_count = 0;
         while (rec)
