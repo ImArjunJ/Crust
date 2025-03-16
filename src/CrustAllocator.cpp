@@ -92,8 +92,45 @@ namespace crust
         if (graceful_mode)
         {
             log_message("ERROR", "Graceful mode enabled: dumping additional allocation context before aborting.");
-            // ideally dump
+
+            if (ptr != nullptr)
+            {
+                header_t* hdr = reinterpret_cast<header_t*>(reinterpret_cast<uint8_t*>(ptr) - REDZONE_SIZE - sizeof(header_t));
+                log_message("ERROR", "Header dump: raw_ptr={}, canary=0x{:x}, size={}, pool_type={}", hdr->raw_ptr, hdr->canary, hdr->size, hdr->pool_type);
+
+                uint8_t* redzone_front = reinterpret_cast<uint8_t*>(hdr) + sizeof(header_t);
+                std::ostringstream front_dump;
+                front_dump << "Redzone front bytes: ";
+                for (unsigned int i = 0; i < REDZONE_SIZE; i++)
+                {
+                    front_dump << std::hex << static_cast<int>(redzone_front[i]) << " ";
+                }
+                std::string frontStr = front_dump.str();
+                log_message("ERROR", "{}", frontStr);
+
+                uint8_t* user_ptr = redzone_front + REDZONE_SIZE;
+                uint8_t* redzone_back = user_ptr + hdr->size;
+                std::ostringstream back_dump;
+                back_dump << "Redzone back bytes: ";
+                for (unsigned int i = 0; i < REDZONE_SIZE; i++)
+                {
+                    back_dump << std::hex << static_cast<int>(redzone_back[i]) << " ";
+                }
+                std::string backStr = back_dump.str();
+                log_message("ERROR", "{}", backStr);
+
+                std::ostringstream user_dump;
+                user_dump << "User memory dump (first 64 bytes): ";
+                unsigned int dump_len = (hdr->size < 64 ? hdr->size : 64);
+                for (unsigned int i = 0; i < dump_len; i++)
+                {
+                    user_dump << std::hex << static_cast<int>(user_ptr[i]) << " ";
+                }
+                std::string userStr = user_dump.str();
+                log_message("ERROR", "{}", userStr);
+            }
         }
+
         abort();
     }
 
