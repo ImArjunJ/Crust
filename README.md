@@ -27,7 +27,7 @@ Crust is a memory safety tool for C/C++ projects that intercepts dynamic (heap) 
   When a critical error is detected (such as a redzone corruption, header overwrite, or double free), Crust++ logs detailed error messages along with stack traces and allocation backtraces. An optional “graceful mode” can be enabled to dump additional allocation context before aborting.
 
 - ### **Interception of Global Memory Functions:**
-  Crust++ overrides global C/C++ allocation functions (`malloc`, `free`, `new`, `delete`, etc.) to ensure comprehensive coverage.
+  Crust overrides global C/C++ allocation functions (`malloc`, `free`, `new`, `delete`, etc.) to ensure full coverage.
 
 ## Build Instructions
 
